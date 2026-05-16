@@ -7,7 +7,7 @@ A small Textual TUI app for VISCA-over-IP PTZ cameras.
 ## Run
 
 ```bash
-bash uv run python -m ptzcontroller
+uv run python -m ptzcontroller
 ```
 
 ## Configure camera IP

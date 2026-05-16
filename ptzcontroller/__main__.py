@@ -56,29 +56,29 @@ class PTZButtons(Grid):
         yield Button("↓", id="tilt_down", action="tilt_down", variant="primary")
         yield Label()
 
-        yield Button("Zoom +", id="zoom_in", action="zoom_in", variant="success")
-        yield Button("Force AF", id="force_autofocus", action="force_autofocus", variant="success")
         yield Button("Zoom -", id="zoom_out", action="zoom_out", variant="error")
+        yield Button("Force AF", id="force_autofocus", action="force_autofocus")
+        yield Button("Zoom +", id="zoom_in", action="zoom_in", variant="success")
 
-        yield Button("Preset 1", id="recall_preset_1", action="recall_preset_1", variant="primary")
-        yield Button("Preset 2", id="recall_preset_2", action="recall_preset_2", variant="primary")
-        yield Button("Preset 3", id="recall_preset_3", action="recall_preset_3", variant="primary")
+        yield Button("Preset 1", id="recall_preset_1", action="recall_preset_1", variant="warning")
+        yield Button("Preset 2", id="recall_preset_2", action="recall_preset_2", variant="warning")
+        yield Button("Preset 3", id="recall_preset_3", action="recall_preset_3", variant="warning")
 
-        yield Button("Preset 4", id="recall_preset_4", action="recall_preset_4", variant="primary")
-        yield Button("Preset 5", id="recall_preset_5", action="recall_preset_5", variant="primary")
-        yield Button("Preset 6", id="recall_preset_6", action="recall_preset_6", variant="primary")
+        yield Button("Preset 4", id="recall_preset_4", action="recall_preset_4", variant="warning")
+        yield Button("Preset 5", id="recall_preset_5", action="recall_preset_5", variant="warning")
+        yield Button("Preset 6", id="recall_preset_6", action="recall_preset_6", variant="warning")
 
-        yield Button("Speed slow", id="speed_slow", action="speed_slow")
-        yield Button("Speed normal", id="speed_normal", action="speed_slow")
-        yield Button("Speed fast", id="speed_fast", action="speed_slow")
+        yield Button("Speed slow", id="speed_slow", action="speed_slow", variant="primary")
+        yield Button("Speed normal", id="speed_normal", action="speed_slow", variant="primary")
+        yield Button("Speed fast", id="speed_fast", action="speed_slow", variant="primary")
 
-        yield Button("Save 1", id="save_preset_1", action="save_preset_1", variant="warning")
-        yield Button("Save 2", id="save_preset_2", action="save_preset_2", variant="warning")
-        yield Button("Save 3", id="save_preset_3", action="save_preset_3", variant="warning")
+        yield Button("Save 1", id="save_preset_1", action="save_preset_1")
+        yield Button("Save 2", id="save_preset_2", action="save_preset_2")
+        yield Button("Save 3", id="save_preset_3", action="save_preset_3")
 
-        yield Button("Save 4", id="save_preset_4", action="save_preset_4", variant="warning")
-        yield Button("Save 5", id="save_preset_5", action="save_preset_5", variant="warning")
-        yield Button("Save 6", id="save_preset_6", action="save_preset_6", variant="warning")
+        yield Button("Save 4", id="save_preset_4", action="save_preset_4")
+        yield Button("Save 5", id="save_preset_5", action="save_preset_5")
+        yield Button("Save 6", id="save_preset_6", action="save_preset_6")
 
 
 class PTZControlApp(App):
