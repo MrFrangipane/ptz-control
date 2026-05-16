@@ -5,8 +5,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=pi
-WorkingDirectory=/home/pi/ptz-controler
+User=frangi
+WorkingDirectory=/home/frangi/ptz-controler
 Environment=PTZ_CAMERA_HOST=192.168.20.173
 ExecStart=/home/frangi/ptz-control/.venv/bin/python -m ptzcontroller
 Restart=on-failure
