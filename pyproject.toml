@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.11,<3.12"
 dependencies = [
     "textual>=8.2.6",
+    "textual-web>=0.4.2",
     "visca-over-ip",
 ]
 
