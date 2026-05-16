@@ -1,11 +1,35 @@
+import logging
 import os
 from typing import Callable
 
 from textual.app import App, ComposeResult
 from textual.containers import Grid, Vertical
-from textual.widgets import Button, Footer, Header, Static, Label
+from textual.widgets import (
+    Button,
+    Footer,
+    Header,
+    Label,
+    RichLog,
+    Static,
+    TabbedContent,
+    TabPane,
+)
 
 from visca_over_ip import Camera
+
+
+class RichLogHandler(logging.Handler):
+    def __init__(self, app: "PTZControlApp") -> None:
+        super().__init__()
+        self.app = app
+
+    def emit(self, record: logging.LogRecord) -> None:
+        message = self.format(record)
+        try:
+            self.app.call_from_thread(self.app._write_richlog, message)
+        except RuntimeError:
+            # Fallback if already on app thread
+            self.app._write_richlog(message)
 
 
 class PTZButtons(Grid):
@@ -61,6 +85,11 @@ class PTZControlApp(App):
         align: center middle;
     }
 
+    TabbedContent {
+        width: 1fr;
+        height: 1fr;
+    }
+
     #root {
         border: round $accent;
         padding: 1 2;
@@ -71,6 +100,10 @@ class PTZControlApp(App):
         content-align: center middle;
         border: solid $primary;
         margin-top: 1;
+    }
+
+    #richlog {
+        border: solid $primary;
     }
 
     PTZButtons {
@@ -99,17 +132,46 @@ class PTZControlApp(App):
         self.theme = "textual-light"
         self.camera: Camera | None = None
         self.camera_host = os.getenv("PTZ_CAMERA_HOST", "192.168.20.173")
+        self.logger = logging.getLogger("ptz")
+        self.logger.setLevel(logging.INFO)
+        self.logger.propagate = False
+        self._richlog_handler: RichLogHandler | None = None
 
     def compose(self) -> ComposeResult:
         yield Header()
-        with Vertical(id="root"):
-            yield Static(f"Camera: {self.camera_host}")
-            yield PTZButtons()
-            yield Static("Not connected", id="status")
+        with TabbedContent(initial="controls"):
+            with TabPane("Controls", id="controls"):
+                with Vertical(id="root"):
+                    yield Static(f"Camera: {self.camera_host}")
+                    yield PTZButtons()
+                    yield Static("Not connected", id="status")
+            with TabPane("Logs", id="logs"):
+                yield RichLog(id="richlog", wrap=True, highlight=True)
         yield Footer()
 
     def on_mount(self) -> None:
+        self._setup_richlog_logging()
         self._connect_camera()
+
+    def _setup_richlog_logging(self) -> None:
+        handler = RichLogHandler(self)
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s: %(message)s"))
+        self.logger.addHandler(handler)
+        self._richlog_handler = handler
+
+    def _write_richlog(self, message: str) -> None:
+        self.query_one("#richlog", RichLog).write(message)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        button_id = event.button.id
+        if not button_id:
+            return
+        action_name = f"action_{button_id}"
+        action = getattr(self, action_name, None)
+        if callable(action):
+            action()
+        else:
+            self._set_status(f"No handler for: {button_id}")
 
     def action_toggle_dark(self) -> None:
         self.theme = "textual-dark" if self.theme == "textual-light" else "textual-light"
@@ -121,19 +183,24 @@ class PTZControlApp(App):
         try:
             self.camera = Camera(self.camera_host)
             self._set_status("Connected")
-        except Exception as exc:
+            self.logger.info("Connected to camera at %s", self.camera_host)
+        except Exception:
             self.camera = None
-            self._set_status(f"Connection failed: {exc}")
+            self._set_status("Connection failed")
+            self.logger.exception("Connection failed")
 
     def _run_camera_cmd(self, label: str, fn: Callable[[], None]) -> None:
         if self.camera is None:
             self._set_status("Camera not connected")
+            self.logger.warning("%s skipped: camera not connected", label)
             return
         try:
             fn()
             self._set_status(label)
-        except Exception as exc:
-            self._set_status(f"{label} failed: {exc}")
+            self.logger.info("%s", label)
+        except Exception:
+            self._set_status(f"{label} failed")
+            self.logger.exception("%s failed", label)
 
     def action_pan_left(self) -> None:
         self._run_camera_cmd("Pan left", lambda: self.camera.pantilt(0, 0, 0))
