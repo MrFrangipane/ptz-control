@@ -8,7 +8,7 @@ StartLimitBurst=5
 [Service]
 Type=simple
 User=frangi
-WorkingDirectory=/home/frangi/ptz-controler
+WorkingDirectory=/home/frangi/ptz-control
 Environment=PTZ_CAMERA_HOST=192.168.20.173
 ExecStart=/home/frangi/ptz-control/.venv/bin/python -m ptzcontroller
 Restart=on-failure
