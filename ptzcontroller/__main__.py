@@ -75,17 +75,27 @@ PAGE_TEMPLATE = """
     .success { background: #15803d; }
     .warning { background: #b45309; }
     .danger { background: #b91c1c; }
+    .camera-form {
+      margin-top: 12px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .camera-form input {
+      flex: 1;
+      min-width: 220px;
+      border: 1px solid var(--border);
+      background: #0b1220;
+      color: var(--text);
+      border-radius: 8px;
+      padding: 10px 8px;
+      font-size: 0.95rem;
+    }
     .logs {
       margin-top: 8px;
       height: 280px;
       overflow: auto;
       border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 10px;
-      background: #0b1220;
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: 0.85rem;
-      white-space: pre-wrap;
     }
   </style>
 </head>
@@ -93,8 +103,13 @@ PAGE_TEMPLATE = """
   <div class="wrap">
     <div class="card">
       <h1>PTZ Controller</h1>
-      <div class="muted">Camera: {{ camera_host }}</div>
+      <div class="muted">Camera: <span id="cameraHost">{{ camera_host }}</span></div>
       <div id="status">{{ status }}</div>
+
+      <form id="cameraForm" class="camera-form">
+        <input id="cameraHostInput" name="camera_host" value="{{ camera_host }}" placeholder="Camera IP or hostname" />
+        <button class="success" type="submit">Change camera</button>
+      </form>
 
       <div class="grid">
         <div></div><button class="primary holdable" data-action="tilt_up">↑</button><div></div>
@@ -136,7 +151,21 @@ PAGE_TEMPLATE = """
   <script>
     const statusEl = document.getElementById("status");
     const logsEl = document.getElementById("logs");
+    const cameraHostEl = document.getElementById("cameraHost");
+    const cameraForm = document.getElementById("cameraForm");
+    const cameraHostInput = document.getElementById("cameraHostInput");
     let holdTimer = null;
+
+    function updatePage(data) {
+      statusEl.textContent = data.status || "OK";
+      logsEl.textContent = (data.logs || []).join("\\n");
+      logsEl.scrollTop = logsEl.scrollHeight;
+
+      if (data.camera_host) {
+        cameraHostEl.textContent = data.camera_host;
+        cameraHostInput.value = data.camera_host;
+      }
+    }
 
     async function runAction(action) {
       const resp = await fetch("/action", {
@@ -145,10 +174,23 @@ PAGE_TEMPLATE = """
         body: JSON.stringify({ action })
       });
       const data = await resp.json();
-      statusEl.textContent = data.status || "OK";
-      logsEl.textContent = (data.logs || []).join("\\n");
-      logsEl.scrollTop = logsEl.scrollHeight;
+      updatePage(data);
     }
+
+    async function changeCameraHost(cameraHost) {
+      const resp = await fetch("/camera", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ camera_host: cameraHost })
+      });
+      const data = await resp.json();
+      updatePage(data);
+    }
+
+    cameraForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      changeCameraHost(cameraHostInput.value.trim());
+    });
 
     function startHold(action) {
       runAction(action);
@@ -234,6 +276,21 @@ class PTZController:
                 self.camera = None
                 self._set_status("Connection failed")
                 self.logger.exception("Connection failed")
+
+    def set_camera_host(self, camera_host: str) -> None:
+        camera_host = camera_host.strip()
+        if not camera_host:
+            self._set_status("Camera host is required")
+            self.logger.warning("Camera host change skipped: empty value")
+            return
+
+        with self._lock:
+            self.camera_host = camera_host
+            self.camera = None
+            self._set_status("Connecting")
+            self.logger.info("Changing camera to %s", self.camera_host)
+
+        self._connect_camera()
 
     def _run_camera_cmd(self, label: str, fn: Callable[[], None]) -> None:
         with self._lock:
@@ -337,6 +394,27 @@ def action():
         {
             "ok": True,
             "status": controller.status,
+            "camera_host": controller.camera_host,
+            "logs": list(controller.logs),
+        }
+    )
+
+
+@app.post("/camera")
+def camera():
+    payload = request.get_json(silent=True) or {}
+    camera_host = str(payload.get("camera_host", "")).strip()
+
+    if camera_host:
+        controller.set_camera_host(camera_host)
+    else:
+        controller._set_status("Camera host is required")
+
+    return jsonify(
+        {
+            "ok": bool(camera_host),
+            "status": controller.status,
+            "camera_host": controller.camera_host,
             "logs": list(controller.logs),
         }
     )
