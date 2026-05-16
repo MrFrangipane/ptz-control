@@ -6,87 +6,77 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>PTZ Controller</title>
   <style>
-    :root {
-      --bg: #0f172a;
-      --card: #111827;
-      --text: #e5e7eb;
-      --muted: #9ca3af;
-      --border: #374151;
-      --primary: #2563eb;
-      --success: #16a34a;
-      --warn: #d97706;
-      --danger: #dc2626;
-    }
-    body {
-      margin: 0;
-      background: var(--bg);
-      color: var(--text);
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-      padding: 20px;
-    }
-    .wrap {
-      max-width: 980px;
-      margin: 0 auto;
-      display: grid;
-      gap: 16px;
-    }
-    .card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 16px;
-    }
-    h1 { margin: 0 0 8px 0; font-size: 1.3rem; }
-    .muted { color: var(--muted); }
-    #status {
-      margin-top: 8px;
-      padding: 10px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-    }
-    .grid {
-      margin-top: 14px;
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 8px;
-    }
-    button {
-      border: 1px solid var(--border);
-      background: #1f2937;
-      color: var(--text);
-      border-radius: 8px;
-      padding: 10px 8px;
-      cursor: pointer;
-      font-size: 0.95rem;
-    }
-    button:hover { filter: brightness(1.1); }
-    .primary { background: #1d4ed8; }
-    .success { background: #15803d; }
-    .warning { background: #b45309; }
-    .danger { background: #b91c1c; }
-    .camera-form {
-      margin-top: 12px;
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-    .camera-form input {
-      flex: 1;
-      min-width: 220px;
-      border: 1px solid var(--border);
-      background: #0b1220;
-      color: var(--text);
-      border-radius: 8px;
-      padding: 10px 8px;
-      font-size: 0.95rem;
-    }
-    .logs {
-      margin-top: 8px;
-      height: 280px;
-      overflow: auto;
-      border: 1px solid var(--border);
-    }
-  </style>
+  :root {
+    --bg: #0f172a;
+    --card: #111827;
+    --text: #e5e7eb;
+    --muted: #9ca3af;
+    --border: #374151;
+    --primary: #2563eb;
+    --success: #16a34a;
+    --warn: #d97706;
+    --danger: #dc2626;
+  }
+  html,
+  body {
+    min-height: 100%;
+  }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    padding: 20px;
+    min-height: 100vh;
+    box-sizing: border-box;
+  }
+  .wrap {
+    max-width: 980px;
+    min-height: calc(100vh - 40px);
+    margin: 0 auto;
+    display: grid;
+    gap: 16px;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+  }
+  h1 { margin: 0 0 8px 0; font-size: 1.3rem; }
+  .muted { color: var(--muted); }
+  #status {
+    margin-top: 8px;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .grid {
+    margin-top: 14px;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-auto-rows: 1fr;
+    gap: 8px;
+    flex: 1;
+  }
+  button {
+    border: 1px solid var(--border);
+    background: #1f2937;
+    color: var(--text);
+    border-radius: 8px;
+    padding: 10px 8px;
+    cursor: pointer;
+    font-size: 0.95rem;
+    height: 100%;
+  }
+  button:hover { filter: brightness(1.1); }
+  .primary { background: #1d4ed8; }
+  .success { background: #15803d; }
+  .warning { background: #b45309; }
+  .danger { background: #b91c1c; }
+</style>
 </head>
 <body>
   <div class="wrap">
@@ -131,10 +121,10 @@
       </div>
     </div>
 
-    <div class="card">
-      <h1>Logs</h1>
-      <div id="logs" class="logs"></div>
-    </div>
+<!--    <div class="card">-->
+<!--      <h1>Logs</h1>-->
+<!--      <div id="logs" class="logs"></div>-->
+<!--    </div>-->
   </div>
 
   <script>
