@@ -1,369 +1,346 @@
 import logging
 import os
+import threading
+from collections import deque
+from datetime import datetime
 from typing import Callable
 
-from textual import events
-from textual.app import App, ComposeResult
-from textual.containers import Grid, Vertical
-from textual.timer import Timer
-from textual.widgets import (
-    Button,
-    Footer,
-    Header,
-    Label,
-    RichLog,
-    Static,
-    TabbedContent,
-    TabPane,
-)
-
+from flask import Flask, jsonify, render_template_string, request
 from visca_over_ip import Camera
 
 
-class RichLogHandler(logging.Handler):
-    def __init__(self, app: "PTZControlApp") -> None:
-        super().__init__()
-        self.app = app
-
-    def emit(self, record: logging.LogRecord) -> None:
-        message = self.format(record)
-        try:
-            self.app.call_from_thread(self.app._write_richlog, message)
-        except RuntimeError:
-            # Fallback if already on app thread
-            self.app._write_richlog(message)
-
-
-class PTZButtons(Grid):
-    """Simple PTZ control pad."""
-
-    SCOPED_CSS = """
-    Label {
-        width: 1fr;
+PAGE_TEMPLATE = """
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>PTZ Controller</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #111827;
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --border: #374151;
+      --primary: #2563eb;
+      --success: #16a34a;
+      --warn: #d97706;
+      --danger: #dc2626;
     }
-    """
-
-    def compose(self) -> ComposeResult:
-        yield Label()
-        yield Button("↑", id="tilt_up", action="tilt_up", variant="primary")
-        yield Label()
-
-        yield Button("←", id="pan_left", action="pan_left", variant="primary")
-        yield Label()
-        yield Button("→", id="pan_right", action="pan_right", variant="primary")
-
-        yield Label()
-        yield Button("↓", id="tilt_down", action="tilt_down", variant="primary")
-        yield Label()
-
-        yield Button("Zoom -", id="zoom_out", action="zoom_out", variant="error")
-        yield Button("Force AF", id="force_autofocus", action="force_autofocus")
-        yield Button("Zoom +", id="zoom_in", action="zoom_in", variant="success")
-
-        yield Button("Preset 1", id="recall_preset_1", action="recall_preset_1", variant="warning")
-        yield Button("Preset 2", id="recall_preset_2", action="recall_preset_2", variant="warning")
-        yield Button("Preset 3", id="recall_preset_3", action="recall_preset_3", variant="warning")
-
-        yield Button("Preset 4", id="recall_preset_4", action="recall_preset_4", variant="warning")
-        yield Button("Preset 5", id="recall_preset_5", action="recall_preset_5", variant="warning")
-        yield Button("Preset 6", id="recall_preset_6", action="recall_preset_6", variant="warning")
-
-        yield Button("Speed slow", id="speed_slow", action="speed_slow", variant="primary")
-        yield Button("Speed normal", id="speed_normal", action="speed_slow", variant="primary")
-        yield Button("Speed fast", id="speed_fast", action="speed_slow", variant="primary")
-
-        yield Button("Save 1", id="save_preset_1", action="save_preset_1")
-        yield Button("Save 2", id="save_preset_2", action="save_preset_2")
-        yield Button("Save 3", id="save_preset_3", action="save_preset_3")
-
-        yield Button("Save 4", id="save_preset_4", action="save_preset_4")
-        yield Button("Save 5", id="save_preset_5", action="save_preset_5")
-        yield Button("Save 6", id="save_preset_6", action="save_preset_6")
-
-
-class PTZControlApp(App):
-    CSS = """
-    Screen {
-        align: center middle;
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      padding: 20px;
     }
-
-    TabbedContent {
-        width: 1fr;
-        height: 1fr;
+    .wrap {
+      max-width: 980px;
+      margin: 0 auto;
+      display: grid;
+      gap: 16px;
     }
-
-    #root {
-        border: round $accent;
-        padding: 1 2;
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
     }
-
+    h1 { margin: 0 0 8px 0; font-size: 1.3rem; }
+    .muted { color: var(--muted); }
     #status {
-        height: 3;
-        content-align: center middle;
-        border: solid $primary;
-        margin-top: 1;
+      margin-top: 8px;
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+    .grid {
+      margin-top: 14px;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+    button {
+      border: 1px solid var(--border);
+      background: #1f2937;
+      color: var(--text);
+      border-radius: 8px;
+      padding: 10px 8px;
+      cursor: pointer;
+      font-size: 0.95rem;
+    }
+    button:hover { filter: brightness(1.1); }
+    .primary { background: #1d4ed8; }
+    .success { background: #15803d; }
+    .warning { background: #b45309; }
+    .danger { background: #b91c1c; }
+    .logs {
+      margin-top: 8px;
+      height: 280px;
+      overflow: auto;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+      background: #0b1220;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.85rem;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>PTZ Controller</h1>
+      <div class="muted">Camera: {{ camera_host }}</div>
+      <div id="status">{{ status }}</div>
+
+      <div class="grid">
+        <div></div><button class="primary holdable" data-action="tilt_up">↑</button><div></div>
+        <button class="primary holdable" data-action="pan_left">←</button><div></div><button class="primary holdable" data-action="pan_right">→</button>
+        <div></div><button class="primary holdable" data-action="tilt_down">↓</button><div></div>
+
+        <button class="danger holdable" data-action="zoom_out">Zoom -</button>
+        <button data-action="force_autofocus">Force AF</button>
+        <button class="success holdable" data-action="zoom_in">Zoom +</button>
+
+        <button class="warning" data-action="recall_preset_1">Preset 1</button>
+        <button class="warning" data-action="recall_preset_2">Preset 2</button>
+        <button class="warning" data-action="recall_preset_3">Preset 3</button>
+
+        <button class="warning" data-action="recall_preset_4">Preset 4</button>
+        <button class="warning" data-action="recall_preset_5">Preset 5</button>
+        <button class="warning" data-action="recall_preset_6">Preset 6</button>
+
+        <button class="primary" data-action="speed_slow">Speed slow</button>
+        <button class="primary" data-action="speed_normal">Speed normal</button>
+        <button class="primary" data-action="speed_fast">Speed fast</button>
+
+        <button data-action="save_preset_1">Save 1</button>
+        <button data-action="save_preset_2">Save 2</button>
+        <button data-action="save_preset_3">Save 3</button>
+
+        <button data-action="save_preset_4">Save 4</button>
+        <button data-action="save_preset_5">Save 5</button>
+        <button data-action="save_preset_6">Save 6</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h1>Logs</h1>
+      <div id="logs" class="logs"></div>
+    </div>
+  </div>
+
+  <script>
+    const statusEl = document.getElementById("status");
+    const logsEl = document.getElementById("logs");
+    let holdTimer = null;
+
+    async function runAction(action) {
+      const resp = await fetch("/action", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action })
+      });
+      const data = await resp.json();
+      statusEl.textContent = data.status || "OK";
+      logsEl.textContent = (data.logs || []).join("\\n");
+      logsEl.scrollTop = logsEl.scrollHeight;
     }
 
-    #richlog {
-        border: solid $primary;
+    function startHold(action) {
+      runAction(action);
+      holdTimer = setInterval(() => runAction(action), 200);
     }
 
-    PTZButtons {
-        grid-size: 3 9;
-        grid-gutter: 1 1;
+    function stopHold() {
+      if (holdTimer) {
+        clearInterval(holdTimer);
+        holdTimer = null;
+      }
     }
 
-    PTZButtons Button {
-        width: 100%;
-    }
-    """
+    document.querySelectorAll("button[data-action]").forEach((btn) => {
+      const action = btn.dataset.action;
+      const holdable = btn.classList.contains("holdable");
 
-    BINDINGS = [
-        ("d", "toggle_dark", "Toggle dark mode"),
-        ("up", "tilt_up", "Tilt up"),
-        ("down", "tilt_down", "Tilt down"),
-        ("left", "pan_left", "Pan left"),
-        ("right", "pan_right", "Pan right"),
-        ("plus", "zoom_in", "Zoom in"),
-        ("minus", "zoom_out", "Zoom out"),
-    ]
+      if (!holdable) {
+        btn.addEventListener("click", () => runAction(action));
+        return;
+      }
 
-    HOLDABLE_BUTTONS = {
-        "pan_left",
-        "pan_right",
-        "tilt_up",
-        "tilt_down",
-        "zoom_in",
-        "zoom_out",
-    }
+      btn.addEventListener("mousedown", () => startHold(action));
+      btn.addEventListener("mouseup", stopHold);
+      btn.addEventListener("mouseleave", stopHold);
 
+      btn.addEventListener("touchstart", (e) => {
+        e.preventDefault();
+        startHold(action);
+      }, { passive: false });
+      btn.addEventListener("touchend", stopHold);
+      btn.addEventListener("touchcancel", stopHold);
+    });
+  </script>
+</body>
+</html>
+"""
+
+
+class PTZController:
     HOLD_REPEAT_SECONDS = 0.2
 
     def __init__(self) -> None:
-        super().__init__()
-        self.theme = "textual-light"
-        self.camera: Camera | None = None
         self.camera_host = os.getenv("PTZ_CAMERA_HOST", "192.168.20.173")
+        self.camera: Camera | None = None
+        self.status = "Not connected"
+        self._offset_factor = 1.0
+
+        self._lock = threading.RLock()
+        self.logs: deque[str] = deque(maxlen=300)
+
         self.logger = logging.getLogger("ptz")
         self.logger.setLevel(logging.INFO)
+        self.logger.handlers.clear()
         self.logger.propagate = False
-        self._richlog_handler: RichLogHandler | None = None
-        self._hold_button_id: str | None = None
-        self._hold_timer: Timer | None = None
+        self.logger.addHandler(self._build_log_handler())
 
-        self._offset_factor: float = 1.0
-
-    def compose(self) -> ComposeResult:
-        yield Header()
-        with TabbedContent(initial="controls"):
-            with TabPane("Controls", id="controls"):
-                with Vertical(id="root"):
-                    yield Static(f"Camera: {self.camera_host}")
-                    yield PTZButtons()
-                    yield Static("Not connected", id="status")
-            with TabPane("Logs", id="logs"):
-                yield RichLog(id="richlog", wrap=True, highlight=True)
-        yield Footer()
-
-    def on_mount(self) -> None:
-        self._setup_richlog_logging()
         self._connect_camera()
 
-    def _setup_richlog_logging(self) -> None:
-        handler = RichLogHandler(self)
+    def _build_log_handler(self) -> logging.Handler:
+        handler = logging.StreamHandler()
         handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s: %(message)s"))
-        self.logger.addHandler(handler)
-        self._richlog_handler = handler
 
-    def _write_richlog(self, message: str) -> None:
-        self.query_one("#richlog", RichLog).write(message)
+        original_emit = handler.emit
 
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        button_id = event.button.id
-        if not button_id:
-            return
+        def emit(record: logging.LogRecord) -> None:
+            original_emit(record)
+            self.logs.append(handler.format(record))
 
-        # Holdable actions are driven by mouse down/up + timer.
-        # Keep click fallback for keyboard/quick click behavior.
-        if button_id in self.HOLDABLE_BUTTONS and self._hold_button_id != button_id:
-            self._invoke_action_by_id(button_id)
-            return
-
-        self._invoke_action_by_id(button_id)
-
-    def _resolve_button_from_mouse_event(self, event: events.MouseDown) -> Button | None:
-        # App-level MouseDown may have widget=None, so resolve target by screen coordinates.
-        try:
-            target, _region = self.screen.get_widget_at(event.screen_x, event.screen_y)
-        except Exception:
-            return None
-
-        node = target
-        while node is not None and not isinstance(node, Button):
-            node = node.parent
-        return node if isinstance(node, Button) else None
-
-    def on_mouse_down(self, event: events.MouseDown) -> None:
-        button = self._resolve_button_from_mouse_event(event)
-        if button is None:
-            return
-
-        button_id = button.id
-        if not button_id or button_id not in self.HOLDABLE_BUTTONS:
-            self.on_button_pressed(Button.Pressed(button))
-            return
-
-        self._start_hold(button_id)
-
-    def on_mouse_up(self, event: events.MouseUp) -> None:
-        self._stop_hold()
-
-    def action_stop(self) -> None:
-        self._stop_hold()
-        self._set_status("Stopped (local hold ended)")
-        self.logger.info("Stopped (local hold ended)")
-
-    def _invoke_action_by_id(self, button_id: str) -> None:
-        action_name = f"action_{button_id}"
-        action = getattr(self, action_name, None)
-        if callable(action):
-            action()
-        else:
-            self._set_status(f"No handler for: {button_id}")
-
-    def _start_hold(self, button_id: str) -> None:
-        if self._hold_button_id == button_id and self._hold_timer is not None:
-            return
-
-        self._stop_hold()
-        self._hold_button_id = button_id
-
-        # Fire immediately, then repeat while mouse is held.
-        self._invoke_action_by_id(button_id)
-        self._hold_timer = self.set_interval(
-            self.HOLD_REPEAT_SECONDS,
-            lambda: self._invoke_action_by_id(button_id),
-        )
-
-    def _stop_hold(self) -> None:
-        self._hold_button_id = None
-        if self._hold_timer is not None:
-            self._hold_timer.stop()
-            self._hold_timer = None
-
-    def action_toggle_dark(self) -> None:
-        self.theme = "textual-dark" if self.theme == "textual-light" else "textual-light"
+        handler.emit = emit  # type: ignore[method-assign]
+        return handler
 
     def _set_status(self, message: str) -> None:
-        self.query_one("#status", Static).update(message)
+        self.status = message
 
     def _connect_camera(self) -> None:
-        try:
-            self.camera = Camera(self.camera_host)
-            self._set_status("Connected")
-            self.logger.info("Connected to camera at %s", self.camera_host)
-        except Exception:
-            self.camera = None
-            self._set_status("Connection failed")
-            self.logger.exception("Connection failed")
+        with self._lock:
+            try:
+                self.camera = Camera(self.camera_host)
+                self._set_status("Connected")
+                self.logger.info("Connected to camera at %s", self.camera_host)
+            except Exception:
+                self.camera = None
+                self._set_status("Connection failed")
+                self.logger.exception("Connection failed")
 
     def _run_camera_cmd(self, label: str, fn: Callable[[], None]) -> None:
-        if self.camera is None:
-            self._set_status("Camera not connected")
-            self.logger.warning("%s skipped: camera not connected", label)
-            return
-        try:
-            fn()
-            self._set_status(label)
-            self.logger.info("%s", label)
-        except Exception:
-            self._set_status(f"{label} failed")
-            self.logger.exception("%s failed", label)
+        with self._lock:
+            if self.camera is None:
+                self._set_status("Camera not connected")
+                self.logger.warning("%s skipped: camera not connected", label)
+                return
+            try:
+                fn()
+                self._set_status(label)
+                self.logger.info("%s", label)
+            except Exception:
+                self._set_status(f"{label} failed")
+                self.logger.exception("%s failed", label)
 
-    def _pan_tilt_offset(self, pan_offset:int=0, tilt_offset:int=0, speed:int =20):
+    def _pan_tilt_offset(self, pan_offset: int = 0, tilt_offset: int = 0, speed: int = 20) -> None:
+        assert self.camera is not None
         pan, tilt = self.camera.get_pantilt_position()
+        print(pan, tilt)
         self.camera.pantilt(
-            pan_speed=speed, tilt_speed=speed,
+            pan_speed=speed,
+            tilt_speed=speed,
             pan_position=pan + int(pan_offset * self._offset_factor),
-            tilt_position=tilt + int(tilt_offset * self._offset_factor)
+            tilt_position=tilt + int(tilt_offset * self._offset_factor),
         )
 
-    def _zoom_offset(self, zoom_offset: int):
+    def _zoom_offset(self, zoom_offset: int) -> None:
+        assert self.camera is not None
         zoom = self.camera.get_zoom_position()
         new_value = max(0, min(zoom + zoom_offset, 16384))
         self.logger.info("Zooming to %d", new_value)
         self.camera.zoom_to(new_value / 16384.0)
 
-    def action_pan_left(self) -> None:
-        self._run_camera_cmd("Pan left", lambda: self._pan_tilt_offset(pan_offset=-30))
-
-    def action_pan_right(self) -> None:
-        self._run_camera_cmd("Pan left", lambda: self._pan_tilt_offset(pan_offset=+30))
-
-    def action_tilt_up(self) -> None:
-        self._run_camera_cmd("Pan left", lambda: self._pan_tilt_offset(tilt_offset=+30))
-
-    def action_tilt_down(self) -> None:
-        self._run_camera_cmd("Pan left", lambda: self._pan_tilt_offset(tilt_offset=-30))
-
-    def action_zoom_in(self) -> None:
-        self._run_camera_cmd("Zoom in", lambda: self._zoom_offset(zoom_offset=+100))
-
-    def action_zoom_out(self) -> None:
-        self._run_camera_cmd("Zoom out", lambda: self._zoom_offset(zoom_offset=-100))
-
-    def action_recall_preset_1(self) -> None:
-        self._run_camera_cmd("Recall preset 1", lambda: self.camera.recall_preset(1))
-
-    def action_recall_preset_2(self) -> None:
-        self._run_camera_cmd("Recall preset 2", lambda: self.camera.recall_preset(2))
-
-    def action_recall_preset_3(self) -> None:
-        self._run_camera_cmd("Recall preset 3", lambda: self.camera.recall_preset(3))
-
-    def action_recall_preset_4(self) -> None:
-        self._run_camera_cmd("Recall preset 4", lambda: self.camera.recall_preset(4))
-
-    def action_recall_preset_5(self) -> None:
-        self._run_camera_cmd("Recall preset 5", lambda: self.camera.recall_preset(5))
-
-    def action_recall_preset_6(self) -> None:
-        self._run_camera_cmd("Recall preset 6", lambda: self.camera.recall_preset(6))
-
-    def action_save_preset_1(self) -> None:
-        self._run_camera_cmd("Save preset 1", lambda: self.camera.save_preset(1))
-
-    def action_save_preset_2(self) -> None:
-        self._run_camera_cmd("Save preset 2", lambda: self.camera.save_preset(2))
-
-    def action_save_preset_3(self) -> None:
-        self._run_camera_cmd("Save preset 3", lambda: self.camera.save_preset(3))
-
-    def action_save_preset_4(self) -> None:
-        self._run_camera_cmd("Save preset 4", lambda: self.camera.save_preset(4))
-
-    def action_save_preset_5(self) -> None:
-        self._run_camera_cmd("Save preset 5", lambda: self.camera.save_preset(5))
-
-    def action_save_preset_6(self) -> None:
-        self._run_camera_cmd("Save preset 6", lambda: self.camera.save_preset(6))
-
-    def action_speed_slow(self) -> None:
-        self._offset_factor = 0.25
-
-    def action_speed_fast(self) -> None:
-        self._offset_factor = 2.0
-
-    def action_speed_normal(self) -> None:
-        self._offset_factor = 1.0
-
-    def action_force_autofocus(self) -> None:
-        self._run_camera_cmd("Force autofocus", lambda: self._focus())
-
-    def _focus(self):
+    def _focus(self) -> None:
+        assert self.camera is not None
         self.camera.set_focus_mode("manual")
         self.camera.set_focus_mode("auto")
 
+    def handle_action(self, action: str) -> None:
+        actions: dict[str, Callable[[], None]] = {
+            "pan_left": lambda: self._run_camera_cmd("Pan left", lambda: self._pan_tilt_offset(pan_offset=-30)),
+            "pan_right": lambda: self._run_camera_cmd("Pan right", lambda: self._pan_tilt_offset(pan_offset=+30)),
+            "tilt_up": lambda: self._run_camera_cmd("Tilt up", lambda: self._pan_tilt_offset(tilt_offset=+30)),
+            "tilt_down": lambda: self._run_camera_cmd("Tilt down", lambda: self._pan_tilt_offset(tilt_offset=-30)),
+            "zoom_in": lambda: self._run_camera_cmd("Zoom in", lambda: self._zoom_offset(zoom_offset=+100)),
+            "zoom_out": lambda: self._run_camera_cmd("Zoom out", lambda: self._zoom_offset(zoom_offset=-100)),
+            "recall_preset_1": lambda: self._run_camera_cmd("Recall preset 1", lambda: self.camera.recall_preset(1)),
+            "recall_preset_2": lambda: self._run_camera_cmd("Recall preset 2", lambda: self.camera.recall_preset(2)),
+            "recall_preset_3": lambda: self._run_camera_cmd("Recall preset 3", lambda: self.camera.recall_preset(3)),
+            "recall_preset_4": lambda: self._run_camera_cmd("Recall preset 4", lambda: self.camera.recall_preset(4)),
+            "recall_preset_5": lambda: self._run_camera_cmd("Recall preset 5", lambda: self.camera.recall_preset(5)),
+            "recall_preset_6": lambda: self._run_camera_cmd("Recall preset 6", lambda: self.camera.recall_preset(6)),
+            "save_preset_1": lambda: self._run_camera_cmd("Save preset 1", lambda: self.camera.save_preset(1)),
+            "save_preset_2": lambda: self._run_camera_cmd("Save preset 2", lambda: self.camera.save_preset(2)),
+            "save_preset_3": lambda: self._run_camera_cmd("Save preset 3", lambda: self.camera.save_preset(3)),
+            "save_preset_4": lambda: self._run_camera_cmd("Save preset 4", lambda: self.camera.save_preset(4)),
+            "save_preset_5": lambda: self._run_camera_cmd("Save preset 5", lambda: self.camera.save_preset(5)),
+            "save_preset_6": lambda: self._run_camera_cmd("Save preset 6", lambda: self.camera.save_preset(6)),
+            "speed_slow": lambda: self._set_speed(0.25, "Speed slow"),
+            "speed_normal": lambda: self._set_speed(1.0, "Speed normal"),
+            "speed_fast": lambda: self._set_speed(2.0, "Speed fast"),
+            "force_autofocus": lambda: self._run_camera_cmd("Force autofocus", self._focus),
+        }
+
+        fn = actions.get(action)
+        if fn is None:
+            self._set_status(f"No handler for: {action}")
+            self.logger.warning("No handler for action '%s'", action)
+            return
+        fn()
+
+    def _set_speed(self, value: float, label: str) -> None:
+        with self._lock:
+            self._offset_factor = value
+            self._set_status(label)
+            self.logger.info("%s", label)
+
+
+controller = PTZController()
+app = Flask(__name__)
+
+
+@app.get("/")
+def index():
+    return render_template_string(
+        PAGE_TEMPLATE,
+        camera_host=controller.camera_host,
+        status=controller.status,
+        now=datetime.now(),
+    )
+
+
+@app.post("/action")
+def action():
+    payload = request.get_json(silent=True) or {}
+    action_name = str(payload.get("action", "")).strip()
+    if action_name:
+        controller.handle_action(action_name)
+
+    return jsonify(
+        {
+            "ok": True,
+            "status": controller.status,
+            "logs": list(controller.logs),
+        }
+    )
+
 
 if __name__ == "__main__":
-    PTZControlApp().run()
+    app.run(host="0.0.0.0", port=8000, debug=False)

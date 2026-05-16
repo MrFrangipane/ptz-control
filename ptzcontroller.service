@@ -1,0 +1,16 @@
+[Unit]
+Description=PTZ Controller
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/ptz-controler
+Environment=PTZ_CAMERA_HOST=192.168.20.173
+ExecStart=/home/frangi/ptz-control/.venv/bin/python /home/frangi/ptz-control/ptzcontroller/__main__.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
