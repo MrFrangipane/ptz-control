@@ -3,5 +3,8 @@ name = "ptz-controler"
 version = "0.1.0"
 description = "PTZ Controller"
 readme = "README.md"
-requires-python = "<=3.11"
-dependencies = []
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "textual>=8.2.6",
+    "visca-over-ip>=0.5.1",
+]
