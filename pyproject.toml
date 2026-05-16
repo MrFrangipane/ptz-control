@@ -6,5 +6,8 @@ readme = "README.md"
 requires-python = ">=3.11,<3.12"
 dependencies = [
     "textual>=8.2.6",
-    "visca-over-ip>=0.5.1",
+    "visca-over-ip",
 ]
+
+[tool.uv.sources]
+visca-over-ip = { git = "https://github.com/misterhay/VISCA-IP-Controller.git", rev = "0bf2af1baeee3f603f1c75f69162eb5124b9be73" }

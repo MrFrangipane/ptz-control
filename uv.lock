@@ -73,7 +73,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "textual", specifier = ">=8.2.6" },
-    { name = "visca-over-ip", specifier = ">=0.5.1" },
+    { name = "visca-over-ip", git = "https://github.com/misterhay/VISCA-IP-Controller.git?rev=0bf2af1baeee3f603f1c75f69162eb5124b9be73" },
 ]
 
 [[package]]
@@ -136,8 +136,4 @@ wheels = [
 [[package]]
 name = "visca-over-ip"
 version = "0.5.1"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/f5/01/2be5e99e00d10d2e9cf745dad48e87f87e8eff22678fddd11c72329bef84/visca_over_ip-0.5.1.tar.gz", hash = "sha256:24eadb0c6b11f0c2af1f8b1aaf7dfc9217c55e6b7dc93ec75492e2961161204a", size = 8721, upload-time = "2024-12-02T03:17:52.248Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/f8/c0/5255b83592eed5b6c2b428bfe806be5ad8e64d99cecee93bca3a6523edee/visca_over_ip-0.5.1-py3-none-any.whl", hash = "sha256:1fb5f6527c453ecff16351188671dbd9ad949f907963148f3ab29d1a287bd520", size = 9395, upload-time = "2024-12-02T03:17:49.836Z" },
-]
+source = { git = "https://github.com/misterhay/VISCA-IP-Controller.git?rev=0bf2af1baeee3f603f1c75f69162eb5124b9be73#0bf2af1baeee3f603f1c75f69162eb5124b9be73" }
