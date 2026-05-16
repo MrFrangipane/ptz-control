@@ -2,6 +2,8 @@
 
 A small Textual TUI app for VISCA-over-IP PTZ cameras.
 
+![](screenshot.jpg)
+
 ## Run
 
 ```bash
